@@ -24,3 +24,6 @@ build/
 
 # OS
 Thumbs.db
+
+# ChatGPT取得ログ（実データ・デバッグファイル）
+chatgpt_logs/
