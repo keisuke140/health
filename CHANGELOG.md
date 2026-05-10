@@ -10,6 +10,13 @@
   - ステルスモード（Cloudflare対策）を適用
   - ログイン検出・Cloudflare通過待機・会話一覧取得・メッセージ抽出・Markdown保存の機能を実装
 
+### GitHub セットアップ
+- `keisuke140/health` リポジトリをGitHub上に作成
+- Fine-grained Personal Access Token を `.env` に保存（`.gitignore` 除外済み）
+  - 必要な権限：Administration: Read & write ＋ Contents: Read & write ＋ Metadata: Read-only
+  - `All repositories` アクセスで設定
+- リモート追加・初回プッシュ完了
+
 ### 未完了（明日へ持ち越し）
 - ChatGPTへのログインが完了できなかった（本人が就寝のため）
 - 実際のチャットデータはまだ取得できていない
