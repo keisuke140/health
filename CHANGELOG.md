@@ -11,11 +11,17 @@
   - ログイン検出・Cloudflare通過待機・会話一覧取得・メッセージ抽出・Markdown保存の機能を実装
 
 ### GitHub セットアップ
-- `keisuke140/health` リポジトリをGitHub上に作成
-- Fine-grained Personal Access Token を `.env` に保存（`.gitignore` 除外済み）
-  - 必要な権限：Administration: Read & write ＋ Contents: Read & write ＋ Metadata: Read-only
-  - `All repositories` アクセスで設定
-- リモート追加・初回プッシュ完了
+- `keisuke140/health` リポジトリをGitHub上に作成（`keisuke140` アカウント）
+- Fine-grained Personal Access Token を発行し `.env` に `GITHUB_TOKEN=...` として保存
+  - `.env` は `.gitignore` で除外済み（コミットされない）
+  - `.env.example` をテンプレートとしてコミット済み
+  - **Token の権限設定（GitHub → Settings → Developer settings → Personal access tokens → Fine-grained tokens）**
+    - Repository access: `All repositories`
+    - Administration: `Read and write`（リポジトリ作成に必要）
+    - Contents: `Read and write`（コードのプッシュに必要）
+    - Metadata: `Read-only`（自動付与・必須）
+- git remote に `https://TOKEN@github.com/keisuke140/health.git` を設定
+- `main` ブランチを初回プッシュ完了
 
 ### 未完了（明日へ持ち越し）
 - ChatGPTへのログインが完了できなかった（本人が就寝のため）
