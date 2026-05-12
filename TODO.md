@@ -2,9 +2,7 @@
 
 ## 直近（次回作業時）
 
-- [ ] `python3 scripts/fetch_chatgpt.py` を実行してChatGPTにログインし、健康管理チャットを取得する
-  - ブラウザが開いたら「ログイン」クリック → ログイン完了 → 自動取得
-  - 取得データは `chatgpt_logs/` に保存される
+- [x] `python3 scripts/fetch_chatgpt.py` を実行してChatGPTにログインし、健康管理チャットを取得する（2026-05-13 完了・30件取得）
 
 ## 取得後にやること
 

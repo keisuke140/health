@@ -5,7 +5,7 @@ ChatGPT健康管理プロジェクトのチャットをhealthレポに保存す�
 1. ブラウザが開きます
 2. プロジェクトページに自動で移動します
 3. 「ログイン」ボタンをクリックしてログインしてください
-4. ログイン後にプロジェクトのチャット一覧が表示されたら自動で取得します
+4. ログイン後にプロジェクトのチャット一覧が自動で取得されます
 """
 
 import asyncio
@@ -15,7 +15,7 @@ from pathlib import Path
 from playwright.async_api import async_playwright
 from playwright_stealth import Stealth
 
-PROJECT_URL = "https://chatgpt.com/g/g-p-6990afe76d6881919add95f35002df31"
+PROJECT_URL = "https://chatgpt.com/g/g-p-6990afe76d6881919add95f35002df31-jian-kang-guan-li/project"
 HEALTH_REPO = Path("/Users/keisuke140/Documents/Projects/health")
 OUTPUT_DIR = HEALTH_REPO / "chatgpt_logs"
 
@@ -29,58 +29,97 @@ async def debug_page(page, label=""):
     print(f"  [DEBUG] {shot.name}")
 
 
-async def wait_until_logged_in_on_project(page, timeout=300000):
-    """
-    プロジェクトページでログイン済み状態になるまで待つ。
-    ログイン済み = ログインボタンがなく、チャット入力欄またはサイドバーが表示されている
-    """
-    print("ブラウザのプロジェクトページで「ログイン」ボタンをクリックしてログインしてください。")
+async def wait_for_login(page, timeout=300000):
+    print("ブラウザでChatGPTにログインしてください。")
     print("ログイン完了後、自動で取得を開始します（最大5分待機）...")
-
     await page.wait_for_function(
         """() => {
-            // ログインボタンが画面にある = まだログインしていない
-            const text = document.body?.innerText || '';
-            const hasLoginPrompt = text.includes('自分に合った回答を得る') ||
-                                   text.includes('Get answers tailored');
-            if (hasLoginPrompt) return false;
-
-            // ログイン・サインアップのボタンが目立つ位置にある
-            const bigBtns = Array.from(document.querySelectorAll('a[href*="auth/login"], a[href*="auth/signup"]'));
-            if (bigBtns.some(b => b.offsetParent !== null)) return false;
-
             // Cloudflareチャレンジ中
             if (document.title === 'Just a moment...') return false;
-
-            // チャットUIが表示されている
-            return !!(
+            // ログインページ
+            if (document.title.includes('開始する') || document.title.includes('Get started')) return false;
+            // URLがauth系ならまだ
+            if (location.pathname.startsWith('/auth')) return false;
+            // ログインボタンが見えている
+            const authBtns = Array.from(document.querySelectorAll('a[href*="auth/login"], a[href*="auth/signup"], button'));
+            const loginBtn = authBtns.find(b => b.offsetParent !== null && (b.innerText.includes('Log in') || b.innerText.includes('ログイン')));
+            if (loginBtn) return false;
+            // サイドバーに会話履歴っぽい要素がある（ログイン済みの証拠）
+            const hasSidebar = !!(
+                document.querySelector('[data-testid="history-item"]') ||
+                document.querySelector('nav a[href^="/c/"]') ||
+                document.querySelector('nav a[href^="/g/"]') ||
+                document.querySelector('[class*="sidebar"] a[href]') ||
                 document.querySelector('#prompt-textarea') ||
-                document.querySelector('[data-testid="send-button"]') ||
-                document.querySelector('textarea')
+                document.querySelector('textarea[placeholder]')
             );
+            return hasSidebar;
         }""",
         timeout=timeout
     )
-    await page.wait_for_timeout(2000)
+    await page.wait_for_timeout(4000)
 
 
-async def get_conversation_links(page):
-    """サイドバーの会話リンクを取得"""
+async def get_project_conversation_links(page):
+    """プロジェクト内の会話リンクを取得（プロジェクトセクションのみ）"""
     await page.wait_for_timeout(2000)
+
+    # ページのHTML全体から会話リンクを収集し、プロジェクトに属するものを返す
     links = await page.evaluate("""() => {
-        return Array.from(document.querySelectorAll('a[href]'))
-            .filter(a => a.href.match(/\\/c\\/[a-z0-9-]+/))
-            .map(a => ({ href: a.href, text: a.innerText.trim() }));
+        const seen = new Set();
+        const results = [];
+
+        // すべての /c/ リンクを探す
+        const allLinks = Array.from(document.querySelectorAll('a[href]'))
+            .filter(a => /\\/c\\/[a-zA-Z0-9-]+/.test(a.href));
+
+        for (const a of allLinks) {
+            if (seen.has(a.href)) continue;
+            seen.add(a.href);
+
+            // このリンクが「プロジェクト」セクションの下にあるか確認
+            let el = a.parentElement;
+            let inProject = false;
+            let depth = 0;
+            while (el && depth < 15) {
+                const text = el.innerText || '';
+                const ariaLabel = el.getAttribute('aria-label') || '';
+                if (
+                    text.includes('健康') || text.includes('health') ||
+                    ariaLabel.includes('健康') || ariaLabel.includes('health') ||
+                    el.dataset?.testid?.includes('project') ||
+                    el.className?.includes?.('project')
+                ) {
+                    inProject = true;
+                    break;
+                }
+                el = el.parentElement;
+                depth++;
+            }
+
+            results.push({
+                href: a.href,
+                text: a.innerText.trim(),
+                inProject
+            });
+        }
+        return results;
     }""")
+
+    # プロジェクト内のものを優先、なければ全件返す
+    project_links = [l for l in links if l["inProject"]]
+    print(f"  全会話リンク: {len(links)}件、プロジェクト内: {len(project_links)}件")
+
+    if project_links:
+        return project_links
+    # プロジェクト判定できなければ全件（前回の動作を維持）
     return links
 
 
 async def get_messages(page):
-    """ページのメッセージを取得"""
     await page.wait_for_timeout(2000)
     try:
         result = await page.evaluate("""() => {
-            // パターン1: data-testid
             const turns = document.querySelectorAll('[data-testid^="conversation-turn"]');
             if (turns.length > 0) {
                 return Array.from(turns).map(el => {
@@ -91,8 +130,6 @@ async def get_messages(page):
                     };
                 }).filter(m => m.text);
             }
-
-            // パターン2: role属性直接
             const roleEls = document.querySelectorAll('[data-message-author-role]');
             if (roleEls.length > 0) {
                 return Array.from(roleEls).map(el => ({
@@ -100,8 +137,6 @@ async def get_messages(page):
                     text: el.innerText.trim()
                 })).filter(m => m.text);
             }
-
-            // パターン3: article
             const articles = document.querySelectorAll('article');
             if (articles.length > 0) {
                 return Array.from(articles).map((el, i) => ({
@@ -118,11 +153,7 @@ async def get_messages(page):
 
 
 def save_md(title, messages, path):
-    lines = [
-        f"# {title}",
-        f"取得日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        ""
-    ]
+    lines = [f"# {title}", f"取得日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}", ""]
     for msg in messages:
         label = "**ユーザー**" if msg["role"] == "user" else "**ChatGPT**"
         lines += [f"## {label}", msg["text"], ""]
@@ -139,7 +170,7 @@ async def main():
             args=["--disable-blink-features=AutomationControlled"]
         )
         context = await browser.new_context(
-            viewport={"width": 1280, "height": 800},
+            viewport={"width": 1280, "height": 900},
             user_agent=(
                 "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
                 "AppleWebKit/537.36 (KHTML, like Gecko) "
@@ -150,73 +181,70 @@ async def main():
         page = await context.new_page()
         await Stealth().apply_stealth_async(page)
 
-        # プロジェクトページを直接開く
-        print(f"プロジェクトページを開いています...")
+        print("プロジェクトページを開いています...")
         await page.goto(PROJECT_URL, wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
 
-        # ログイン待機
         try:
-            await wait_until_logged_in_on_project(page, timeout=300000)
+            await wait_for_login(page)
         except Exception as e:
             print(f"タイムアウトまたはエラー: {e}")
-            await debug_page(page, "login_timeout")
+            try:
+                await debug_page(page, "login_timeout")
+            except Exception:
+                pass
             await browser.close()
             return
 
-        print("\nログイン確認。データを取得します...")
+        print("\nログイン確認。プロジェクトページに移動します...")
+        await page.goto(PROJECT_URL, wait_until="domcontentloaded")
+        await page.wait_for_timeout(5000)
         await debug_page(page, "after_login")
 
-        # 会話リストを取得
         print("会話リストを確認中...")
-        conversations = await get_conversation_links(page)
+        conversations = await get_project_conversation_links(page)
 
         if not conversations:
-            print("会話リストが見つかりません。現在のページからメッセージを取得します。")
-            messages = await get_messages(page)
+            print("会話が見つかりませんでした。デバッグファイルを確認してください。")
+            await browser.close()
+            return
+
+        print(f"{len(conversations)}件の会話を取得開始...")
+        saved = []
+        for i, conv in enumerate(conversations):
+            href = conv["href"]
+            raw_title = conv["text"].split("\n")[0] or f"conversation_{i+1}"
+            safe_title = re.sub(r'[\\/*?:"<>|]', "", raw_title)[:50]
+            print(f"\n[{i+1}/{len(conversations)}] {safe_title}")
+
+            try:
+                await page.goto(href, wait_until="domcontentloaded")
+                await page.wait_for_timeout(3000)
+                messages = await get_messages(page)
+            except Exception as e:
+                print(f"  エラー: {e}")
+                messages = []
+
             if messages:
-                save_md("健康管理チャット", messages, OUTPUT_DIR / "health_chat.md")
-                print(f"\n完了。{len(messages)}件のメッセージを保存しました。")
+                fname = f"{i+1:02d}_{safe_title}.md"
+                save_md(raw_title, messages, OUTPUT_DIR / fname)
+                saved.append((fname, raw_title))
             else:
-                print("メッセージが取得できませんでした。デバッグファイルを確認してください。")
-        else:
-            print(f"{len(conversations)}件の会話を発見。取得開始...")
-            saved = []
-            for i, conv in enumerate(conversations):
-                href = conv["href"]
-                raw_title = conv["text"].split("\n")[0] or f"conversation_{i+1}"
-                safe_title = re.sub(r'[\\/*?:"<>|]', "", raw_title)[:50]
-                print(f"\n[{i+1}/{len(conversations)}] {safe_title}")
+                print("  メッセージ取得不可（スキップ）")
 
-                try:
-                    await page.goto(href, wait_until="domcontentloaded")
-                    await page.wait_for_timeout(3000)
-                    messages = await get_messages(page)
-                except Exception as e:
-                    print(f"  エラー: {e}")
-                    messages = []
+        idx = [
+            "# ChatGPT健康管理チャットログ",
+            f"取得日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+            f"合計: {len(saved)}件", "",
+            "## ファイル一覧",
+        ]
+        for fname, title in saved:
+            idx.append(f"- [{title}]({fname})")
+        (OUTPUT_DIR / "README.md").write_text("\n".join(idx), encoding="utf-8")
 
-                if messages:
-                    fname = f"{i+1:02d}_{safe_title}.md"
-                    save_md(raw_title, messages, OUTPUT_DIR / fname)
-                    saved.append((fname, raw_title))
-                else:
-                    print("  メッセージ取得不可（スキップ）")
-
-            # インデックス作成
-            idx = [
-                "# ChatGPT健康管理チャットログ",
-                f"取得日時: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                f"合計: {len(saved)}件", "",
-                "## ファイル一覧",
-            ]
-            for fname, title in saved:
-                idx.append(f"- [{title}]({fname})")
-            (OUTPUT_DIR / "README.md").write_text("\n".join(idx), encoding="utf-8")
-            print(f"\n完了。{len(saved)}件の会話を保存しました。")
-
+        print(f"\n完了。{len(saved)}件の会話を保存しました。")
         print(f"保存先: {OUTPUT_DIR}")
-        await page.wait_for_timeout(3000)
+        await page.wait_for_timeout(2000)
         await browser.close()
 
 
