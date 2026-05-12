@@ -17,7 +17,7 @@ from playwright_stealth import Stealth
 
 PROJECT_URL = "https://chatgpt.com/g/g-p-6990afe76d6881919add95f35002df31-jian-kang-guan-li/project"
 HEALTH_REPO = Path("/Users/keisuke140/Documents/Projects/health")
-OUTPUT_DIR = HEALTH_REPO / "chatgpt_logs"
+OUTPUT_DIR = HEALTH_REPO / "logs" / "chatgpt"
 
 
 async def debug_page(page, label=""):
@@ -181,8 +181,8 @@ async def main():
         page = await context.new_page()
         await Stealth().apply_stealth_async(page)
 
-        print("プロジェクトページを開いています...")
-        await page.goto(PROJECT_URL, wait_until="domcontentloaded")
+        print("ChatGPTのトップページを開いています...")
+        await page.goto("https://chatgpt.com", wait_until="domcontentloaded")
         await page.wait_for_timeout(3000)
 
         try:
